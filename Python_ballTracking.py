@@ -16,7 +16,7 @@ ap.add_argument("-b", "--buffer", type=int, default=64,
 args = vars(ap.parse_args())
 
 originOffset = 259
-cmScale = .5
+#cmScale = .5
 
 pos =-1
 scaleFactor = 0
@@ -25,13 +25,17 @@ refFactor = 20
 calFactor =0
 zRef = 30
 calibrated = False
-
+proceed = False
 z = 0
 
-tennisDiameterCM  = 6.54
-tennisRadiusCM = 3.27
+tennisDiameterM  = 0.0654
+tennisRadiusM = 0.0327
 maxFactor = 57.23
 xDist = 0
+xCount = 0
+xPos = 0
+initialX = 0
+travelTime = 2
 yDist = 0
 
 color = input ("Input the color of the ball you would like tracked: ")
@@ -56,6 +60,13 @@ greenUpper = (64, 255, 255)
 varLower = (colorList[pos+1],colorList[pos+2],colorList[pos+3])
 varUpper = (colorList[pos+4], colorList[pos+5], colorList[pos+6])
 tempXVals = np.empty(20, np.double)
+tempYVals = np.empty(20, np.double)
+avgXDiff = np.empty(len(tempXVals)-1, np.double)
+avgYDiff = np.empty(len(tempYVals)-1, np.double)
+avgXCount = 0
+xSum = 0
+#VELOCITY IN M/S
+xVelocity = 0
 #tennisLower = (0,95,215)
 #tennisUpper = (255,255,255)
 
@@ -122,7 +133,7 @@ while True:
 		key = cv2.waitKey(30) & 0xFF
 		# if the 'f' key is pressed, set the referenceFactor to the scaleFactor at that point
 		if key == ord("f"):
-			calFactor = radius / tennisRadiusCM
+			calFactor = radius / tennisRadiusM
 			print (calFactor)
 			calibrated = True
 			center = None
@@ -130,46 +141,77 @@ while True:
 		if key == ord("q"):
 			break
 	else :
-		if len(cnts) > 0:
-			# find the largest contour in the mask, then use
-			# it to compute the minimum enclosing circle and
-			# centroid
-			
-			c = max(cnts, key=cv2.contourArea)
-			((x, y), radius) = cv2.minEnclosingCircle(c)
+		if not proceed:
+			if key == ord("p"):
+				proceed = True
+		else:
+			if len(cnts) > 0:
+				# find the largest contour in the mask, then use
+				# it to compute the minimum enclosing circle and
+				# centroid
+				
+				c = max(cnts, key=cv2.contourArea)
+				((x, y), radius) = cv2.minEnclosingCircle(c)
 
-			#print (str(x) + "," + str(y))
-			
-			
-			#max x value is 598, min is 0
-			#max y value is 448, min is 0
-			#max radius is 374.3
-			#max scaleFactor is 57.23
-			M = cv2.moments(c)
-			center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
-			
-			scaleFactor = radius / tennisRadiusCM
-			#SCALE FACTOR IS LINEAR???
-			#If scale factor is not linear, need to use interp function
-			diff = maxFactor - scaleFactor
-			#diff never goes to 0
-			#print ("Diff is " + str(diff))
+				#print (str(x) + "," + str(y))
+				
+				
+				#max x value is 598, min is 0
+				#max y value is 448, min is 0
+				#max radius is 374.3
+				#max scaleFactor is 57.23
+				M = cv2.moments(c)
+				center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+				
+				scaleFactor = radius / tennisRadiusM
+				#SCALE FACTOR IS LINEAR???
+				#If scale factor is not linear, need to use interp function
+				diff = maxFactor - scaleFactor
+				#diff never goes to 0
+				#print ("Diff is " + str(diff))
 
-			
-			#z = ((diff) * tennisDiameterCM)*cmScale
-			z = (refFactor/scaleFactor) * zRef
-			xDist = (tennisRadiusCM/radius) * x
-			yDist = (tennisRadiusCM/ radius) * y
-			print ("Y position is:" + str(yDist))
-			#print ("Z position is :" + str(z)) 
-			#print ("Scale factor is :" + str(scaleFactor))
-			# only proceed if the radius meets a minimum size
-			if radius > 10:
-				# draw the circle and centroid on the frame,
-				# then update the list of tracked points
-				cv2.circle(frame, (int(x), int(y)), int(radius),
-					(0, 255, 255), 2)
-				cv2.circle(frame, center, 5, (0, 0, 255), -1)
+				
+				#z = ((diff) * tennisDiameterCM)*cmScale
+				z = (refFactor/scaleFactor) * zRef
+				xDist = (tennisRadiusM/radius) * x
+				yDist = (tennisRadiusM/ radius) * y
+				if (xCount < len(tempXVals)-1):
+					if (xCount == 0):
+						initialX = x
+						timeOne = time.time()
+					if (xCount == 1):
+						timeTwo = time.time()
+					tempXVals[xCount] = xDist
+					xCount += 1
+					#print (str(x))
+				
+				if (xCount >=len(tempXVals)):
+					
+					timeDiff = timeTwo- timeOne
+					for j in range (0, len(avgXDiff)-1):
+						avgXDiff[j] = (tempXVals[j+1]-tempXVals[j])
+						xSum += avgXDiff[j]
+					
+					#print (str(timeDiff))
+					xVelocity = ((xSum / len(avgXDiff))/timeDiff)
+					print ("X Velocity is " + str(xVelocity) + "m/s")
+					#xCount =0
+				xPos = travelTime * scaleFactor *xVelocity + initialX
+				#print ("Projected x is " + str(xPos))
+				cv2.circle(frame, (int(xPos), 200), 50,
+						(0, 255, 255), 2)
+				
+				#print ("X position is:" + str(xDist))
+				#print ("Z position is :" + str(z)) 
+				#print ("Scale factor is :" + str(scaleFactor))
+				# only proceed if the radius meets a minimum size
+				if radius > 10:
+					
+					# draw the circle and centroid on the frame,
+					# then update the list of tracked points
+					cv2.circle(frame, (int(x), int(y)), int(radius),
+						(0, 255, 255), 2)
+					cv2.circle(frame, center, 5, (0, 0, 255), -1)
 
 		# update the points queue
 		pts.appendleft(center) 
