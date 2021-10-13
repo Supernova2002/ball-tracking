@@ -6,6 +6,100 @@ import argparse
 import cv2
 import imutils
 import time
+import matplotlib.pyplot as plt
+import os
+import glob
+
+photosTake = 3
+def calibrate( frame, calCount):
+	
+	
+
+	calFrame = frame
+	
+
+	
+	#os.remove(file) for file in os.listdir('./Pictures/Camera Roll/') if file.endswith('.jpg')
+	if (calCount < photosTake ):
+		
+		cv2.imshow("Frame", calFrame)
+		key = cv2.waitKey(30) & 0xFF
+		if (key == ord("t")):
+			
+			print ("t is pressed")
+			calCount = calCount + 1
+			
+			
+			cv2.imwrite("test" + str(calCount) + ".jpg", calFrame)
+			
+	
+	# Defining the dimensions of checkerboard
+	if (calCount >= photosTake ):
+		print ("calibrating")
+		calCount = calCount + 1
+		
+		CHECKERBOARD = (6,8)
+		criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+		# Creating vector to store vectors of 3D points for each checkerboard image
+		objpoints = []
+		# Creating vector to store vectors of 2D points for each checkerboard image
+		imgpoints = [] 
+
+
+		# Defining the world coordinates for 3D points
+		objp = np.zeros((1, CHECKERBOARD[0] * CHECKERBOARD[1], 3), np.float32)
+		objp[0,:,:2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
+		prev_img_shape = None
+
+		# Extracting path of individual image stored in a given directory
+		images = glob.glob('./Pictures/Camera Roll/*.jpg')
+		for fname in images:
+			img = cv2.imread(fname)
+			gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+			# Find the chess board corners
+			# If desired number of corners are found in the image then ret = true
+			ret, corners = cv2.findChessboardCorners(gray, CHECKERBOARD, cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_FAST_CHECK + cv2.CALIB_CB_NORMALIZE_IMAGE)
+			
+			"""
+			If desired number of corner are detected,
+			we refine the pixel coordinates and display 
+			them on the images of checker board
+			"""
+			if ret == True:
+				objpoints.append(objp)
+				# refining pixel coordinates for given 2d points.
+				corners2 = cv2.cornerSubPix(gray, corners, (11,11),(-1,-1), criteria)
+				
+				imgpoints.append(corners2)
+
+				# Draw and display the corners
+				img = cv2.drawChessboardCorners(img, CHECKERBOARD, corners2, ret)
+			
+			cv2.imshow('img',img)
+			cv2.waitKey(0)
+		
+		cv2.destroyAllWindows()
+
+		h,w = img.shape[:2]
+
+		"""
+		Performing camera calibration by 
+		passing the value of known 3D points (objpoints)
+		and corresponding pixel coordinates of the 
+		detected corners (imgpoints)
+		"""
+		ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+
+		print("Camera matrix : \n")
+		print(mtx)
+		print("dist : \n")
+		print(dist)
+		print("rvecs : \n")
+		print(rvecs)
+		print("tvecs : \n")
+		print(tvecs)
+	return calCount 
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -27,6 +121,7 @@ zRef = 30
 calibrated = False
 proceed = False
 z = 0
+calCount = 0
 
 tennisDiameterM  = 0.0654
 tennisRadiusM = 0.0327
@@ -37,6 +132,11 @@ xPos = 0
 initialX = 0
 travelTime = 2
 yDist = 0
+yCount = 0
+yPos = 0
+g = 9.82
+velocitySum =0
+
 
 color = input ("Input the color of the ball you would like tracked: ")
 print (color)
@@ -59,16 +159,23 @@ greenLower = (29, 86, 6)
 greenUpper = (64, 255, 255)
 varLower = (colorList[pos+1],colorList[pos+2],colorList[pos+3])
 varUpper = (colorList[pos+4], colorList[pos+5], colorList[pos+6])
-tempXVals = np.empty(20, np.double)
-tempYVals = np.empty(20, np.double)
-avgXDiff = np.empty(len(tempXVals)-1, np.double)
-avgYDiff = np.empty(len(tempYVals)-1, np.double)
+tempXVals = np.empty(10, np.double)
+tempYVals = np.empty(100, np.double)
+tempTimeVal  =np.empty(len(tempXVals)-1, np.double)
+tempVelocity = np.empty(len(tempXVals)-1, np.double)
+XDiff = np.empty(len(tempXVals)-1, np.double)
+YDiff = np.empty(len(tempYVals)-1, np.double)
 avgXCount = 0
 xSum = 0
+timeSum = 0
+timeTwo = time.time()
 #VELOCITY IN M/S
 xVelocity = 0
 #tennisLower = (0,95,215)
 #tennisUpper = (255,255,255)
+
+
+
 
 
 
@@ -106,6 +213,9 @@ while True:
 	frame = imutils.resize(frame, width=600)
 	blurred = cv2.GaussianBlur(frame, (11, 11), 0)
 	hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+
+	if (calCount < photosTake+1):
+		calCount = calibrate(frame, calCount)
 
     # construct a mask for the color "green", then perform
 	# a series of dilations and erosions to remove any small
@@ -175,27 +285,62 @@ while True:
 				z = (refFactor/scaleFactor) * zRef
 				xDist = (tennisRadiusM/radius) * x
 				yDist = (tennisRadiusM/ radius) * y
-				if (xCount < len(tempXVals)-1):
-					if (xCount == 0):
+				
+				if (xCount < len(tempXVals) and xCount >= 0):
+					
+					if (xCount % 2 == 0):
 						initialX = x
 						timeOne = time.time()
-					if (xCount == 1):
+						if(xCount != len(tempXVals)-1):
+							tempTimeVal[xCount] =  timeOne-timeTwo
+							
+					if (xCount % 2 == 1):
 						timeTwo = time.time()
-					tempXVals[xCount] = xDist
+						if(xCount != len(tempXVals)-1):
+							tempTimeVal[xCount] = timeTwo - timeOne
+							
+					tempXVals[xCount] = x
+					tempYVals[xCount] = -y +800
 					xCount += 1
 					#print (str(x))
 				
-				if (xCount >=len(tempXVals)):
+				if (xCount >= len(tempXVals)):
+					
+					
 					
 					timeDiff = timeTwo- timeOne
-					for j in range (0, len(avgXDiff)-1):
-						avgXDiff[j] = (tempXVals[j+1]-tempXVals[j])
-						xSum += avgXDiff[j]
+					for j in range (0,len(XDiff)):
+						XDiff[j] = (tempXVals[j+1]-tempXVals[j])
+						#print (str(XDiff))
+						xSum += XDiff[j]
+					tempXVals.fill(0)
+					for k in range (0,len(tempTimeVal)):
+						tempVelocity[k] = XDiff[k]/tempTimeVal[k]
+						timeSum += tempTimeVal[k]
+						#print (timeSum)
+					for h in range (0, len(tempVelocity)):
+						velocitySum += tempVelocity[h]
 					
 					#print (str(timeDiff))
-					xVelocity = ((xSum / len(avgXDiff))/timeDiff)
+					
+					#matplot
+					#print (tempXVals)
+					#time.sleep(10)
+					#plt.plot(tempVelocity, tempTimeVal, color='g', label='xvals')
+					#plt.plot(tempXVals, tempYVals , color='g', label='xvals')
+					#plt.xlabel('t')
+					#plt.ylabel('x')
+					#plt.plot(tempXVals, color='r', label = 'xvelocity')
+					#plt.legend()
+					#plt.show()  
+					#print (timeSum/len(tempTimeVal))
+					xVelocity = (((xSum / len(XDiff) )*tennisRadiusM/radius)/(timeSum/len(tempTimeVal)))
+					#xVelocity = (velocitySum / len(tempVelocity)) 
+					
 					print ("X Velocity is " + str(xVelocity) + "m/s")
-					#xCount =0
+					xCount = 0
+					timeSum = 0
+					xSum = 0
 				xPos = travelTime * scaleFactor *xVelocity + initialX
 				#print ("Projected x is " + str(xPos))
 				cv2.circle(frame, (int(xPos), 200), 50,
@@ -205,6 +350,7 @@ while True:
 				#print ("Z position is :" + str(z)) 
 				#print ("Scale factor is :" + str(scaleFactor))
 				# only proceed if the radius meets a minimum size
+				
 				if radius > 10:
 					
 					# draw the circle and centroid on the frame,
@@ -222,7 +368,7 @@ while True:
 			# them
 			if pts[i - 1] is None or pts[i] is None:
 				continue
-
+			
 			# otherwise, compute the thickness of the line and
 			# draw the connecting lines
 			thickness = int(np.sqrt(args["buffer"] / float(i + 1)) * 2.5)
@@ -246,3 +392,5 @@ else:
 
 # close all windows
 cv2.destroyAllWindows()
+
+
