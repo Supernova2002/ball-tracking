@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import os
 import glob
 
-photosTake = 3
+photosTake = 5
 def calibrate( frame, calCount):
 	
 	
@@ -20,6 +20,7 @@ def calibrate( frame, calCount):
 
 	
 	#os.remove(file) for file in os.listdir('./Pictures/Camera Roll/') if file.endswith('.jpg')
+	
 	if (calCount < photosTake ):
 		
 		cv2.imshow("Frame", calFrame)
@@ -29,8 +30,9 @@ def calibrate( frame, calCount):
 			print ("t is pressed")
 			calCount = calCount + 1
 			
-			
-			cv2.imwrite("test" + str(calCount) + ".jpg", calFrame)
+			path = './Pictures/Camera Roll'
+			#cv2.imwrite("./Pictures/Camera Roll/test" + str(calCount) + ".jpg", calFrame)
+			cv2.imwrite(os.path.join(path , 'test' + str(calCount) + '.jpg'),calFrame)
 			
 	
 	# Defining the dimensions of checkerboard
@@ -53,6 +55,8 @@ def calibrate( frame, calCount):
 		prev_img_shape = None
 
 		# Extracting path of individual image stored in a given directory
+		#'./Pictures/Camera Roll/*.jpg'
+		#'./Users/dstek/*.jpg'
 		images = glob.glob('./Pictures/Camera Roll/*.jpg')
 		for fname in images:
 			img = cv2.imread(fname)
@@ -159,14 +163,16 @@ greenLower = (29, 86, 6)
 greenUpper = (64, 255, 255)
 varLower = (colorList[pos+1],colorList[pos+2],colorList[pos+3])
 varUpper = (colorList[pos+4], colorList[pos+5], colorList[pos+6])
-tempXVals = np.empty(10, np.double)
-tempYVals = np.empty(100, np.double)
+tempXVals = np.empty(15, np.double)
+tempYVals = np.empty(15, np.double)
 tempTimeVal  =np.empty(len(tempXVals)-1, np.double)
+totalTime = np.empty(len(tempXVals)-1, np.double)
 tempVelocity = np.empty(len(tempXVals)-1, np.double)
 XDiff = np.empty(len(tempXVals)-1, np.double)
 YDiff = np.empty(len(tempYVals)-1, np.double)
 avgXCount = 0
 xSum = 0
+ySum = 0
 timeSum = 0
 timeTwo = time.time()
 #VELOCITY IN M/S
@@ -185,6 +191,7 @@ pts = deque(maxlen=args["buffer"])
 # if a video path was not supplied, grab the reference
 # to the webcam
 if not args.get("video", False):
+	#set src to 0 for built in webcam, use 1 for a plugged in one
 	vs = VideoStream(src=0).start()
 
 # otherwise, grab a reference to the video file
@@ -194,7 +201,7 @@ else:
 # allow the camera or video file to warm up
 time.sleep(2.0)
 
-print("If calibrating, please move the ball out to a distance of 30cm from the camera, then move the f key to confirm calibration")
+print("To calibrate, please press the T button with a checkerboard in frame 5 times")
 # keep looping
 while True:
     # grab the current frame
@@ -292,12 +299,17 @@ while True:
 						initialX = x
 						timeOne = time.time()
 						if(xCount != len(tempXVals)-1):
-							tempTimeVal[xCount] =  timeOne-timeTwo
+							tempTimeVal[xCount] =  timeTwo-timeOne
+							if(xCount ==0):
+								totalTime[xCount] = tempTimeVal[xCount]
+							else:
+								totalTime[xCount] = totalTime[xCount-1] + tempTimeVal[xCount]
 							
 					if (xCount % 2 == 1):
 						timeTwo = time.time()
 						if(xCount != len(tempXVals)-1):
-							tempTimeVal[xCount] = timeTwo - timeOne
+							tempTimeVal[xCount] = timeOne- timeTwo
+							totalTime[xCount] = totalTime[xCount-1] + tempTimeVal[xCount]
 							
 					tempXVals[xCount] = x
 					tempYVals[xCount] = -y +800
@@ -311,11 +323,13 @@ while True:
 					timeDiff = timeTwo- timeOne
 					for j in range (0,len(XDiff)):
 						XDiff[j] = (tempXVals[j+1]-tempXVals[j])
+						YDiff[j] = (tempYVals[j+1]-tempYVals[j])
 						#print (str(XDiff))
 						xSum += XDiff[j]
+						ySum += YDiff[j]
 					tempXVals.fill(0)
 					for k in range (0,len(tempTimeVal)):
-						tempVelocity[k] = XDiff[k]/tempTimeVal[k]
+						tempVelocity[k] = (XDiff[k]/tempTimeVal[k])*tennisRadiusM/radius
 						timeSum += tempTimeVal[k]
 						#print (timeSum)
 					for h in range (0, len(tempVelocity)):
@@ -328,8 +342,9 @@ while True:
 					#time.sleep(10)
 					#plt.plot(tempVelocity, tempTimeVal, color='g', label='xvals')
 					#plt.plot(tempXVals, tempYVals , color='g', label='xvals')
+					#plt.plot(tempTimeVal, XDiff )
 					#plt.xlabel('t')
-					#plt.ylabel('x')
+					#plt.ylabel('x change')
 					#plt.plot(tempXVals, color='r', label = 'xvelocity')
 					#plt.legend()
 					#plt.show()  
@@ -343,8 +358,10 @@ while True:
 					xSum = 0
 				xPos = travelTime * scaleFactor *xVelocity + initialX
 				#print ("Projected x is " + str(xPos))
-				cv2.circle(frame, (int(xPos), 200), 50,
-						(0, 255, 255), 2)
+
+				#draws predicted x trajectory at a certain time away
+				#cv2.circle(frame, (int(xPos), 200), 50,
+						#(0, 255, 255), 2)
 				
 				#print ("X position is:" + str(xDist))
 				#print ("Z position is :" + str(z)) 
