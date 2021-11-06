@@ -2,6 +2,7 @@
 from collections import deque
 from imutils.video import VideoStream
 import numpy as np
+from pyquaternion import Quaternion
 import argparse
 import cv2
 import imutils
@@ -11,9 +12,10 @@ import os
 import glob
 
 photosTake = 5
+
 def calibrate( frame, calCount):
 	
-	
+	xFocal = 0
 
 	calFrame = frame
 	
@@ -94,16 +96,41 @@ def calibrate( frame, calCount):
 		detected corners (imgpoints)
 		"""
 		ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
-
+		
 		print("Camera matrix : \n")
 		print(mtx)
+		xFocal = mtx[0][0]
+		numVecs = np.empty(3, float)
+		
+		for x in range (0,3):
+			numVecs[x] = rvecs[0][1]
+
+		rMat = np.empty((3, 3),float )
+		cv2.Rodrigues(numVecs, rMat)
+		rotation = np.eye(3)
+		q8d = Quaternion(matrix = rotation)		 
 		print("dist : \n")
 		print(dist)
 		print("rvecs : \n")
 		print(rvecs)
+		print("rmat : \n")
+		print(rMat)
+		print ("Quaternion : \n")
+		print (q8d)
 		print("tvecs : \n")
 		print(tvecs)
-	return calCount 
+		
+	return xFocal, calCount 
+
+
+def getYPos(initialY, initialV, time):
+	projectedYPos = initialY + (initialV*time + 0.5*g*((time*time)))*scaleFactor
+	return projectedYPos
+
+def getXPos(initialX, initialV, time):
+	projectedXPos = initialX + (initialV*time) 
+	return projectedXPos
+
 
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
@@ -134,11 +161,13 @@ xDist = 0
 xCount = 0
 xPos = 0
 initialX = 0
+initialY = 0
 travelTime = 2
+
 yDist = 0
 yCount = 0
 yPos = 0
-g = 9.82
+g = -9.82
 velocitySum =0
 
 
@@ -163,24 +192,32 @@ greenLower = (29, 86, 6)
 greenUpper = (64, 255, 255)
 varLower = (colorList[pos+1],colorList[pos+2],colorList[pos+3])
 varUpper = (colorList[pos+4], colorList[pos+5], colorList[pos+6])
-tempXVals = np.empty(15, np.double)
-tempYVals = np.empty(15, np.double)
+tempXVals = np.empty(13, np.double)
+tempYVals = np.empty(13, np.double)
 tempTimeVal  =np.empty(len(tempXVals)-1, np.double)
 totalTime = np.empty(len(tempXVals)-1, np.double)
 tempVelocity = np.empty(len(tempXVals)-1, np.double)
+predictedYPos = np.empty(len(tempXVals)-1, np.double)
 XDiff = np.empty(len(tempXVals)-1, np.double)
 YDiff = np.empty(len(tempYVals)-1, np.double)
 avgXCount = 0
 xSum = 0
 ySum = 0
 timeSum = 0
+negative = False
+initialYVel = 0
+initialYPos = 0
+fixedInitialYVelocity = 0
 timeTwo = time.time()
+timeStart = time.time()
 #VELOCITY IN M/S
 xVelocity = 0
+finalXVelocity = 0
+projectedYPos = 0
 #tennisLower = (0,95,215)
 #tennisUpper = (255,255,255)
-
-
+readings = 0
+firstY = True
 
 
 
@@ -222,7 +259,7 @@ while True:
 	hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
 	if (calCount < photosTake+1):
-		calCount = calibrate(frame, calCount)
+		xFocal, calCount = calibrate(frame, calCount)
 
     # construct a mask for the color "green", then perform
 	# a series of dilations and erosions to remove any small
@@ -270,7 +307,7 @@ while True:
 				c = max(cnts, key=cv2.contourArea)
 				((x, y), radius) = cv2.minEnclosingCircle(c)
 
-				#print (str(x) + "," + str(y))
+				
 				
 				
 				#max x value is 598, min is 0
@@ -286,33 +323,40 @@ while True:
 				diff = maxFactor - scaleFactor
 				#diff never goes to 0
 				#print ("Diff is " + str(diff))
-
+				
 				
 				#z = ((diff) * tennisDiameterCM)*cmScale
-				z = (refFactor/scaleFactor) * zRef
+				#z = (refFactor/scaleFactor) * zRef
+				#z = xFocal* tennisRadiusM / radius
 				xDist = (tennisRadiusM/radius) * x
 				yDist = (tennisRadiusM/ radius) * y
 				
-				if (xCount < len(tempXVals) and xCount >= 0):
+				if (xCount < len(tempXVals) and xCount >= 0 ) :
 					
 					if (xCount % 2 == 0):
 						initialX = x
+						initialY = -y
 						timeOne = time.time()
+						if firstY:
+							initialYPos = y
+							firstY = False
 						if(xCount != len(tempXVals)-1):
-							tempTimeVal[xCount] =  timeTwo-timeOne
+							tempTimeVal[xCount] =  timeOne-timeTwo
 							if(xCount ==0):
 								totalTime[xCount] = tempTimeVal[xCount]
+								print (str(totalTime[0]))
 							else:
 								totalTime[xCount] = totalTime[xCount-1] + tempTimeVal[xCount]
 							
 					if (xCount % 2 == 1):
 						timeTwo = time.time()
 						if(xCount != len(tempXVals)-1):
-							tempTimeVal[xCount] = timeOne- timeTwo
+							tempTimeVal[xCount] = timeTwo - timeOne
 							totalTime[xCount] = totalTime[xCount-1] + tempTimeVal[xCount]
 							
 					tempXVals[xCount] = x
-					tempYVals[xCount] = -y +800
+					tempYVals[xCount] = -y
+					
 					xCount += 1
 					#print (str(x))
 				
@@ -324,10 +368,16 @@ while True:
 					for j in range (0,len(XDiff)):
 						XDiff[j] = (tempXVals[j+1]-tempXVals[j])
 						YDiff[j] = (tempYVals[j+1]-tempYVals[j])
+						if (YDiff[j] <0):
+							negative = True
 						#print (str(XDiff))
 						xSum += XDiff[j]
-						ySum += YDiff[j]
-					tempXVals.fill(0)
+						if not negative:
+							ySum += YDiff[j]
+						if negative:
+							#initialYVel = ySum / totalTime[j-1]
+							initialYVel = -((totalTime[j-1] -totalTime[0]) * g)
+					#tempXVals.fill(0)
 					for k in range (0,len(tempTimeVal)):
 						tempVelocity[k] = (XDiff[k]/tempTimeVal[k])*tennisRadiusM/radius
 						timeSum += tempTimeVal[k]
@@ -342,26 +392,42 @@ while True:
 					#time.sleep(10)
 					#plt.plot(tempVelocity, tempTimeVal, color='g', label='xvals')
 					#plt.plot(tempXVals, tempYVals , color='g', label='xvals')
-					#plt.plot(tempTimeVal, XDiff )
-					#plt.xlabel('t')
-					#plt.ylabel('x change')
-					#plt.plot(tempXVals, color='r', label = 'xvelocity')
-					#plt.legend()
-					#plt.show()  
+					#plt.plot(totalTime, YDiff, '-ok')
+					
 					#print (timeSum/len(tempTimeVal))
 					xVelocity = (((xSum / len(XDiff) )*tennisRadiusM/radius)/(timeSum/len(tempTimeVal)))
 					#xVelocity = (velocitySum / len(tempVelocity)) 
+					if readings == 0:
+						print ("X Velocity is " + str(xVelocity) + "m/s")
+						finalXVelocity = xVelocity
+						fixedInitialYVelocity = initialYVel 
+						for i in range (len(totalTime)):
+							predictedYPos[i] = getYPos(initialYPos, fixedInitialYVelocity, totalTime[i]-totalTime[0])
+						print ("Initial Y velocity is " + str(fixedInitialYVelocity * tennisRadiusM/radius))
+					plt.plot(totalTime, predictedYPos, '-ok')
 					
-					print ("X Velocity is " + str(xVelocity) + "m/s")
+					plt.xlabel('t')
+					plt.ylabel('predicted y')
+					#plt.plot(tempXVals, color='r', label = 'xvelocity')
+					#plt.legend()
+					plt.show()  
+					plt.plot(tempXVals, tempYVals, '-ok')
+					plt.xlabel('x')
+					plt.ylabel('y')
+					#plt.plot(tempXVals, color='r', label = 'xvelocity')
+					#plt.legend()
+					plt.show()  
 					xCount = 0
 					timeSum = 0
 					xSum = 0
+					readings = readings+1
+					
 				xPos = travelTime * scaleFactor *xVelocity + initialX
 				#print ("Projected x is " + str(xPos))
 
 				#draws predicted x trajectory at a certain time away
-				#cv2.circle(frame, (int(xPos), 200), 50,
-						#(0, 255, 255), 2)
+				cv2.circle(frame, (int(getXPos(x, finalXVelocity*scaleFactor, 2)), int(y)), 50,
+						(0, 255, 255), 2)
 				
 				#print ("X position is:" + str(xDist))
 				#print ("Z position is :" + str(z)) 
@@ -394,7 +460,10 @@ while True:
 		# show the frame to our screen
 		cv2.imshow("Frame", frame)
 		key = cv2.waitKey(30) & 0xFF
-		
+		""" image = cv2.imread('./Pictures/Camera Roll/test1.jpg')
+		(h,w) = image.shape[:2]
+		print ("Center x pixel is " + str(w/2))
+		print ("Center y pixel is " + str(h/2)) """
     # if the 'q' key is pressed, stop the loop
 	if key == ord("q"):
 		break
