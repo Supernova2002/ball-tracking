@@ -101,22 +101,27 @@ def calibrate( frame, calCount):
 		print(mtx)
 		xFocal = mtx[0][0]
 		numVecs = np.empty(3, float)
-		
-		for x in range (0,3):
-			numVecs[x] = rvecs[0][1]
-
 		rMat = np.empty((3, 3),float )
-		cv2.Rodrigues(numVecs, rMat)
-		rotation = np.eye(3)
-		q8d = Quaternion(matrix = rotation)		 
+		for x in range (0,5):
+			for y in range (0,3):
+				numVecs[y] = rvecs[x][y]
+			cv2.Rodrigues(numVecs, rMat)
+			q8d = Quaternion(matrix = rMat)		
+			theta = q8d.degrees 
+
+			print ("Quaternion: " + str(q8d) + "\n")
+			print ("Axis " + str(q8d.axis) + "\n" )
+			print ("Degrees rotation:" + str(theta) + "\n")		
+		
+		
 		print("dist : \n")
 		print(dist)
 		print("rvecs : \n")
 		print(rvecs)
 		print("rmat : \n")
 		print(rMat)
-		print ("Quaternion : \n")
-		print (q8d)
+		
+		
 		print("tvecs : \n")
 		print(tvecs)
 		
