@@ -2,6 +2,7 @@
 from collections import deque
 from imutils.video import VideoStream
 import numpy as np
+from numpy.typing import _128Bit
 from pyquaternion import Quaternion
 import argparse
 import cv2
@@ -221,15 +222,22 @@ finalXVelocity = 0
 projectedYPos = 0
 #tennisLower = (0,95,215)
 #tennisUpper = (255,255,255)
+xIntervals = 80
+yIntervals = 80
+drawing = np.empty((xIntervals, yIntervals), np.int8)
+for i in range(0, xIntervals):
+	for j in range(0, yIntervals):
+		drawing[i][j] = 0
+				
+drawCheck = False
 readings = 0
 firstY = True
-drawing = np.empty((100,100), np.int8)
 
 
 
 
 
-pts = deque()
+
 
 # if a video path was not supplied, grab the reference
 # to the webcam
@@ -264,7 +272,7 @@ while True:
 	blurred = cv2.GaussianBlur(frame, (11, 11), 0)
 	hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-
+	
 
     # construct a mask for the color "green", then perform
 	# a series of dilations and erosions to remove any small
@@ -322,11 +330,89 @@ while True:
 				M = cv2.moments(c)
 				center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
 				
+				scaleFactor = radius / tennisRadiusM
+				#SCALE FACTOR IS LINEAR???
+				#If scale factor is not linear, need to use interp function
+				diff = maxFactor - scaleFactor
+				#diff never goes to 0
+				#print ("Diff is " + str(diff))
+				
+				
+				#z = ((diff) * tennisDiameterCM)*cmScale
+				#z = (refFactor/scaleFactor) * zRef
+				#z = xFocal* tennisRadiusM / radius
+				xDist = (tennisRadiusM/radius) * x
+				yDist = (tennisRadiusM/ radius) * y
+				
+				if (xCount < len(tempXVals) and xCount >= 0 ) :
+					
+					if (xCount % 2 == 0):
+						initialX = x
+						initialY = -y
+						timeOne = time.time()
+						if firstY:
+							initialYPos = y
+							firstY = False
+						if(xCount != len(tempXVals)-1):
+							tempTimeVal[xCount] =  timeOne-timeTwo
+							if(xCount ==0):
+								totalTime[xCount] = tempTimeVal[xCount]
+								print (str(totalTime[0]))
+							else:
+								totalTime[xCount] = totalTime[xCount-1] + tempTimeVal[xCount]
+							
+					if (xCount % 2 == 1):
+						timeTwo = time.time()
+						if(xCount != len(tempXVals)-1):
+							tempTimeVal[xCount] = timeTwo - timeOne
+							totalTime[xCount] = totalTime[xCount-1] + tempTimeVal[xCount]
+							
+					tempXVals[xCount] = x
+					tempYVals[xCount] = -y
+					
+					xCount += 1
+					#print (str(x))
+				
+				if (xCount >= len(tempXVals)):
+					
+					
+					
+					timeDiff = timeTwo- timeOne
+					for j in range (0,len(XDiff)):
+						XDiff[j] = (tempXVals[j+1]-tempXVals[j])
+						YDiff[j] = (tempYVals[j+1]-tempYVals[j])
+						if (YDiff[j] <0):
+							negative = True
+						#print (str(XDiff))
+						xSum += XDiff[j]
+						if not negative:
+							ySum += YDiff[j]
+						if negative:
+							#initialYVel = ySum / totalTime[j-1]
+							initialYVel = -((totalTime[j-1] -totalTime[0]) * g)
+					#tempXVals.fill(0)
+					for k in range (0,len(tempTimeVal)):
+						tempVelocity[k] = (XDiff[k]/tempTimeVal[k])*tennisRadiusM/radius
+						timeSum += tempTimeVal[k]
+						#print (timeSum)
+					for h in range (0, len(tempVelocity)):
+						velocitySum += tempVelocity[h]
+					
+					#print (str(timeDiff))
+					
+					#matplot
+					#print (tempXVals)
+					#time.sleep(10)
+					#plt.plot(tempVelocity, tempTimeVal, color='g', label='xvals')
+					#plt.plot(tempXVals, tempYVals , color='g', label='xvals')
+					#plt.plot(totalTime, YDiff, '-ok')
+					
+					
+				xPos = travelTime * scaleFactor *xVelocity + initialX
 				#print ("Projected x is " + str(xPos))
 
 				#draws predicted x trajectory at a certain time away
-				cv2.circle(frame, (int(getXPos(x, finalXVelocity*scaleFactor, 2)), int(y)), 50,
-						(0, 255, 255), 2)
+				
 				
 				#print ("X position is:" + str(xDist))
 				#print ("Z position is :" + str(z)) 
@@ -337,32 +423,46 @@ while True:
 					
 					# draw the circle and centroid on the frame,
 					# then update the list of tracked points
-					cv2.circle(frame, (int(x), int(y)), int(radius),
-						(0, 255, 255), 2)
+					
 					cv2.circle(frame, center, 5, (0, 0, 255), -1)
 
+		
 
-    
-		# update the points queue
-		pts.appendleft(center) 
-
-		# loop over the set of tracked points
-		for i in range(1, len(pts)):
-			# if either of the tracked points are None, ignore
-			# them
-			if pts[i - 1] is None or pts[i] is None:
-				continue
+		
+        #checks if the key to add a new point is being pressed
+		(h,w) = frame.shape[:2]
+		if key == ord("d"):
 			
-			# otherwise, compute the thickness of the line and
-			# draw the connecting lines
-			thickness = int(np.sqrt(args["buffer"] / float(i + 1)) * 2.5)
-			cv2.line(frame, pts[i - 1], pts[i], (0, 0, 255), thickness)
+			
+
+			#converts the x position of the ball to 
+			xTransform = int((x /w) * xIntervals)
+			yTransform = int((y/h)*  yIntervals)
+			drawing[xTransform][yTransform] = 1
+
+			
+			
+		if key == ord("e"):
+			#converts the x position of the ball to 
+			xTransform = int((x /w) * xIntervals)
+			yTransform = int((y/h)*  yIntervals)
+			drawing[xTransform][yTransform] = 0
+			#cv2.line(frame, pts[i - 1], pts[i], (0, 0, 255), thickness)
+			#cv2.circle(frame,pts[i], 5, (0, 0, 255), -1 )
+        # loop over the set of tracked points
+		for i in range(0, xIntervals):
+			for j in range(0, yIntervals):
+				if drawing[i][j] == 1:
+					cv2.circle(frame, (int((i+0.5)/xIntervals * w), int((j+0.5)/yIntervals * h)), 2,
+						(0, 255, 255), 2)
+
 
 		# show the frame to our screen
 		cv2.imshow("Frame", frame)
 		key = cv2.waitKey(30) & 0xFF
+		
 		""" image = cv2.imread('./Pictures/Camera Roll/test1.jpg')
-		(h,w) = image.shape[:2]
+		
 		print ("Center x pixel is " + str(w/2))
 		print ("Center y pixel is " + str(h/2)) """
     # if the 'q' key is pressed, stop the loop
