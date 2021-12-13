@@ -198,6 +198,8 @@ greenLower = (29, 86, 6)
 greenUpper = (64, 255, 255)
 varLower = (colorList[pos+1],colorList[pos+2],colorList[pos+3])
 varUpper = (colorList[pos+4], colorList[pos+5], colorList[pos+6])
+redLower = (137,139,71)
+redUpper = (255,255,255)
 tempXVals = np.empty(13, np.double)
 tempYVals = np.empty(13, np.double)
 tempTimeVal  =np.empty(len(tempXVals)-1, np.double)
@@ -282,12 +284,22 @@ while True:
 	mask = cv2.erode(mask, None, iterations=2)
 	mask = cv2.dilate(mask, None, iterations=2)
 
+	redMask = cv2.inRange(hsv, redLower, redUpper)
+	#mask = cv2.inRange(hsv, tennisLower, tennisUpper)
+	redMask = cv2.erode(redMask, None, iterations=2)
+	redMask = cv2.dilate(redMask, None, iterations=2)
+
     # find contours in the mask and initialize the current
 	# (x, y) center of the ball
 	cnts = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
 		cv2.CHAIN_APPROX_SIMPLE)
 	cnts = imutils.grab_contours(cnts)
 	center = None
+
+	redCnts = cv2.findContours(redMask.copy(), cv2.RETR_EXTERNAL,
+		cv2.CHAIN_APPROX_SIMPLE)
+	redCnts = imutils.grab_contours(redCnts)
+	redCenter = None
 	
     # only proceed if at least one contour was found
 	if not calibrated:
@@ -296,6 +308,11 @@ while True:
 			((x, y), radius) = cv2.minEnclosingCircle(c)
 			M = cv2.moments(c)
 			center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
+		if len(redCnts) > 0:
+			redC = max(redCnts, key=cv2.contourArea)
+			((rx, ry), redRadius) = cv2.minEnclosingCircle(redC)
+			redM = cv2.moments(redC)
+			redCenter = (int(redM["m10"] / redM["m00"]), int(redM["m01"] / redM["m00"]))
 		cv2.imshow("Frame", frame)
 		key = cv2.waitKey(30) & 0xFF
 		# if the 'f' key is pressed, set the referenceFactor to the scaleFactor at that point
@@ -320,6 +337,7 @@ while True:
 				c = max(cnts, key=cv2.contourArea)
 				((x, y), radius) = cv2.minEnclosingCircle(c)
 
+				
 				
 				
 				
@@ -418,27 +436,62 @@ while True:
 				#print ("Z position is :" + str(z)) 
 				#print ("Scale factor is :" + str(scaleFactor))
 				# only proceed if the radius meets a minimum size
-				
+				#checks if the key to add a new point is being pressed
+				(h,w) = frame.shape[:2]
+
+				#converts the x position of the ball to 
+				xTransform = int((x /w) * xIntervals)
+				yTransform = int((y/h)*  yIntervals)
+				drawing[xTransform][yTransform] = 1
 				if radius > 10:
 					
 					# draw the circle and centroid on the frame,
 					# then update the list of tracked points
 					
 					cv2.circle(frame, center, 5, (0, 0, 255), -1)
+			if len(redCnts) >0 :
+				# find the largest contour in the mask, then use
+				# it to compute the minimum enclosing circle and
+				# centroid
+				
+				redC = max(redCnts, key=cv2.contourArea)
+				((rx, ry), redRadius) = cv2.minEnclosingCircle(redC)
 
+				
+				
+				
+				
+				#max x value is 598, min is 0
+				#max y value is 448, min is 0
+				#max radius is 374.3
+				#max scaleFactor is 57.23
+				redM = cv2.moments(redC)
+				redCenter = (int(redM["m10"] / redM["m00"]), int(redM["m01"] / redM["m00"]))
+
+				(h,w) = frame.shape[:2]
+
+				#converts the x position of the ball to 
+				redXTransform = int((rx /w) * xIntervals)
+				redYTransform = int((ry/h)*  yIntervals)
+				if(len(cnts) == 0):
+					for i in range (-6,7):
+						if(redXTransform+i < 80):
+							for j in range (-6,7) :
+								if(redYTransform+j <80):
+									
+									drawing[redXTransform +i][redYTransform+j] = 0
+					drawing[redXTransform][redYTransform] = 0
+				
+				if redRadius > 5:
+					
+					# draw the circle and centroid on the frame,
+					# then update the list of tracked points
+					
+					cv2.circle(frame, redCenter, 5, (0, 0, 255), -1)
 		
 
 		
-        #checks if the key to add a new point is being pressed
-		(h,w) = frame.shape[:2]
-		if key == ord("d"):
-			
-			
-
-			#converts the x position of the ball to 
-			xTransform = int((x /w) * xIntervals)
-			yTransform = int((y/h)*  yIntervals)
-			drawing[xTransform][yTransform] = 1
+        
 
 			
 			
